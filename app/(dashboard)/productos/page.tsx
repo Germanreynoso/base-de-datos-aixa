@@ -30,10 +30,64 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { getProducts, getCategories } from '@/lib/services'
+import { getProducts, getCategories, deleteProduct } from '@/lib/services'
 import { formatCurrency } from '@/lib/utils/format'
 import type { Product } from '@/lib/types'
 import { ProductForm } from './product-form'
+import { toast } from 'sonner'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
+
+const ProductActions = ({ product }: { product: Product }) => {
+  const queryClient = useQueryClient()
+  
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteProduct(product.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Producto eliminado')
+    },
+    onError: () => {
+      toast.error('Error al eliminar producto')
+    }
+  })
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8">
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link href={`/productos/${product.id}`}>
+            <Eye className="mr-2 size-4" />
+            Ver detalles
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`/productos/${product.id}/editar`}>
+            <Pencil className="mr-2 size-4" />
+            Editar
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem 
+          className="text-destructive focus:text-destructive cursor-pointer"
+          onClick={() => {
+            if (confirm('¿Estás seguro de eliminar este producto?')) {
+              deleteMutation.mutate()
+            }
+          }}
+          disabled={deleteMutation.isPending}
+        >
+          <Trash2 className="mr-2 size-4" />
+          {deleteMutation.isPending ? 'Eliminando...' : 'Eliminar'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 const columns: ColumnDef<Product>[] = [
   {
@@ -104,37 +158,7 @@ const columns: ColumnDef<Product>[] = [
   },
   {
     id: 'actions',
-    cell: ({ row }) => {
-      const product = row.original
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link href={`/productos/${product.id}`}>
-                <Eye className="mr-2 size-4" />
-                Ver detalles
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href={`/productos/${product.id}/editar`}>
-                <Pencil className="mr-2 size-4" />
-                Editar
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive focus:text-destructive">
-              <Trash2 className="mr-2 size-4" />
-              Eliminar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )
-    },
+    cell: ({ row }) => <ProductActions product={row.original} />,
   },
 ]
 

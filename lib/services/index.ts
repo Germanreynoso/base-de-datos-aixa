@@ -1,21 +1,7 @@
 // =============================================================================
 // SERVICIOS DEL SISTEMA ERP/POS - GROWSHOP
 // =============================================================================
-// TODO: Reemplazar las funciones mock con llamadas a Supabase
-// 
-// Cuando conectes Supabase:
-// 1. Importa el cliente: import { createClient } from '@/lib/supabase/client'
-// 2. Reemplaza cada función mock con la query correspondiente
-// 3. Ejemplo:
-//    export async function getProducts() {
-//      const supabase = createClient()
-//      const { data, error } = await supabase
-//        .from('products')
-//        .select('*, category:categories(*), supplier:suppliers(*)')
-//        .order('name')
-//      if (error) throw error
-//      return data
-//    }
+import { createClient } from '@/lib/supabase/client'
 
 import type {
   Product,
@@ -61,55 +47,58 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 // =============================================================================
 
 export async function getProducts(filters?: QueryFilters): Promise<PaginatedResponse<Product>> {
-  // TODO: Reemplazar con Supabase query
-  await delay(300)
+  const supabase = createClient()
   
-  let filtered = [...mockProducts]
-  
+  let query = supabase
+    .from('products')
+    .select('*, category:categories(*)', { count: 'exact' })
+
   // Filtrar por búsqueda
   if (filters?.search) {
-    const search = filters.search.toLowerCase()
-    filtered = filtered.filter(p => 
-      p.name.toLowerCase().includes(search) ||
-      p.sku.toLowerCase().includes(search) ||
-      p.barcode?.toLowerCase().includes(search)
-    )
+    query = query.or(`name.ilike.%${filters.search}%,sku.ilike.%${filters.search}%`)
   }
   
   // Filtrar por categoría
-  if (filters?.category_id) {
-    filtered = filtered.filter(p => p.category_id === filters.category_id)
+  if (filters?.category_id && filters.category_id !== 'all') {
+    query = query.eq('category_id', filters.category_id)
   }
   
   // Filtrar por estado
-  if (filters?.status) {
-    filtered = filtered.filter(p => p.status === filters.status)
-  }
-  
-  // Filtrar por stock bajo
-  if (filters?.low_stock) {
-    filtered = filtered.filter(p => p.stock_quantity <= p.min_stock)
+  if (filters?.status && filters.status !== 'all') {
+    query = query.eq('status', filters.status)
   }
   
   // Paginación
   const page = filters?.page || 1
   const pageSize = filters?.pageSize || 10
   const start = (page - 1) * pageSize
-  const end = start + pageSize
+  const end = start + pageSize - 1
+  
+  query = query.range(start, end).order('created_at', { ascending: false })
+  
+  const { data, error, count } = await query
+  
+  if (error) throw error
   
   return {
-    data: filtered.slice(start, end),
-    total: filtered.length,
+    data: data as Product[] || [],
+    total: count || 0,
     page,
     pageSize,
-    totalPages: Math.ceil(filtered.length / pageSize),
+    totalPages: Math.ceil((count || 0) / pageSize),
   }
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
-  // TODO: Reemplazar con Supabase query
-  await delay(200)
-  return mockProducts.find(p => p.id === id) || null
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('products')
+    .select('*, category:categories(*)')
+    .eq('id', id)
+    .single()
+    
+  if (error && error.code !== 'PGRST116') throw error
+  return data as Product | null
 }
 
 export async function getProductByBarcode(barcode: string): Promise<Product | null> {
@@ -119,38 +108,55 @@ export async function getProductByBarcode(barcode: string): Promise<Product | nu
 }
 
 export async function createProduct(product: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product> {
-  // TODO: Reemplazar con Supabase insert
-  await delay(300)
-  const newProduct: Product = {
-    ...product,
-    id: String(mockProducts.length + 1),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  const supabase = createClient()
+  
+  // Limpiar campos relacionales antes de insertar
+  const { category, supplier, ...productData } = product as any
+  
+  // Si el supplier_id viene vacío o es un mock ID ("1"), lo eliminamos para que no falle el UUID de Supabase
+  if (!productData.supplier_id || productData.supplier_id.length < 36) {
+    delete productData.supplier_id
   }
-  mockProducts.push(newProduct)
-  return newProduct
+  
+  const { data, error } = await supabase
+    .from('products')
+    .insert([productData])
+    .select()
+    .single()
+    
+  if (error) throw error
+  return data as Product
 }
 
-export async function updateProduct(id: string, data: Partial<Product>): Promise<Product> {
-  // TODO: Reemplazar con Supabase update
-  await delay(300)
-  const index = mockProducts.findIndex(p => p.id === id)
-  if (index === -1) throw new Error('Producto no encontrado')
+export async function updateProduct(id: string, updateData: Partial<Product>): Promise<Product> {
+  const supabase = createClient()
   
-  mockProducts[index] = {
-    ...mockProducts[index],
-    ...data,
-    updated_at: new Date().toISOString(),
+  // Limpiar campos relacionales antes de actualizar
+  const { category, supplier, id: _id, created_at, updated_at, ...cleanData } = updateData as any
+  
+  if (!cleanData.supplier_id || cleanData.supplier_id.length < 36) {
+    delete cleanData.supplier_id
   }
-  return mockProducts[index]
+  
+  const { data, error } = await supabase
+    .from('products')
+    .update({ ...cleanData, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+    
+  if (error) throw error
+  return data as Product
 }
 
 export async function deleteProduct(id: string): Promise<void> {
-  // TODO: Reemplazar con Supabase delete
-  await delay(200)
-  const index = mockProducts.findIndex(p => p.id === id)
-  if (index === -1) throw new Error('Producto no encontrado')
-  mockProducts.splice(index, 1)
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('products')
+    .delete()
+    .eq('id', id)
+    
+  if (error) throw error
 }
 
 export async function getLowStockProducts(): Promise<Product[]> {
@@ -164,15 +170,26 @@ export async function getLowStockProducts(): Promise<Product[]> {
 // =============================================================================
 
 export async function getCategories(): Promise<Category[]> {
-  // TODO: Reemplazar con Supabase query
-  await delay(200)
-  return mockCategories
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .order('name')
+  
+  if (error) throw error
+  return data as Category[] || []
 }
 
 export async function getCategoryById(id: string): Promise<Category | null> {
-  // TODO: Reemplazar con Supabase query
-  await delay(100)
-  return mockCategories.find(c => c.id === id) || null
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('id', id)
+    .single()
+    
+  if (error && error.code !== 'PGRST116') throw error
+  return data as Category | null
 }
 
 // =============================================================================
@@ -314,44 +331,36 @@ export async function updateCustomer(id: string, data: Partial<Customer>): Promi
 // =============================================================================
 
 export async function getSales(filters?: QueryFilters): Promise<PaginatedResponse<Sale>> {
-  // TODO: Reemplazar con Supabase query
-  await delay(300)
+  const supabase = createClient()
   
-  let filtered = [...mockSales]
-  
+  let query = supabase
+    .from('sales')
+    .select('*', { count: 'exact' })
+
   if (filters?.search) {
-    const search = filters.search.toLowerCase()
-    filtered = filtered.filter(s => 
-      s.sale_number.toLowerCase().includes(search) ||
-      s.customer?.name.toLowerCase().includes(search)
-    )
+    query = query.ilike('sale_number', `%${filters.search}%`)
   }
-  
-  if (filters?.status) {
-    filtered = filtered.filter(s => s.status === filters.status)
+  if (filters?.status && filters.status !== 'all') {
+    query = query.eq('status', filters.status)
   }
-  
-  if (filters?.date_from) {
-    filtered = filtered.filter(s => s.created_at >= filters.date_from!)
-  }
-  
-  if (filters?.date_to) {
-    filtered = filtered.filter(s => s.created_at <= filters.date_to!)
-  }
-  
-  // Ordenar por fecha descendente
-  filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
   
   const page = filters?.page || 1
   const pageSize = filters?.pageSize || 10
   const start = (page - 1) * pageSize
+  const end = start + pageSize - 1
+  
+  query = query.range(start, end).order('created_at', { ascending: false })
+  
+  const { data, error, count } = await query
+  
+  if (error) throw error
   
   return {
-    data: filtered.slice(start, start + pageSize),
-    total: filtered.length,
+    data: data as Sale[] || [],
+    total: count || 0,
     page,
     pageSize,
-    totalPages: Math.ceil(filtered.length / pageSize),
+    totalPages: Math.ceil((count || 0) / pageSize),
   }
 }
 
@@ -367,15 +376,7 @@ export async function createSale(
   customerId?: string,
   discountPercentage?: number
 ): Promise<Sale> {
-  // TODO: Reemplazar con Supabase transaction
-  // Esta función debe:
-  // 1. Crear la venta
-  // 2. Crear los items de venta
-  // 3. Registrar los pagos
-  // 4. Actualizar el stock de cada producto
-  // 5. Crear movimientos de inventario
-  // 6. Actualizar el total de compras del cliente
-  await delay(500)
+  const supabase = createClient()
   
   const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0)
   const discountAmount = subtotal * ((discountPercentage || 0) / 100)
@@ -383,42 +384,64 @@ export async function createSale(
   const total = subtotal - discountAmount + taxAmount
   const amountPaid = payments.reduce((sum, p) => sum + p.amount, 0)
   
-  const newSale: Sale = {
-    id: String(mockSales.length + 1),
-    sale_number: `V-2024-${String(mockSales.length + 1).padStart(4, '0')}`,
-    customer_id: customerId,
-    customer: customerId ? mockCustomers.find(c => c.id === customerId) : undefined,
-    cashier_id: '3',
-    cashier: mockUsers[2],
-    subtotal,
-    discount_percentage: discountPercentage || 0,
-    discount_amount: discountAmount,
-    tax_amount: taxAmount,
-    total,
-    payment_method: payments.length === 1 ? payments[0].method : 'mixto',
-    payment_status: amountPaid >= total ? 'paid' : 'partial',
-    amount_paid: amountPaid,
-    change_amount: Math.max(0, amountPaid - total),
-    items: items.map((item, idx) => ({
-      id: String(idx + 1),
-      sale_id: String(mockSales.length + 1),
-      product_id: item.product.id,
-      product: item.product,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      discount_percentage: item.discount_percentage,
-      discount_amount: item.discount_amount,
-      subtotal: item.subtotal,
-      total: item.total,
-    })),
-    items_count: items.length,
-    status: 'completed',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  // Generar número de venta simple
+  const saleNumber = `V-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`
+
+  // 1. Crear la venta
+  const { data: saleData, error: saleError } = await supabase
+    .from('sales')
+    .insert([{
+      sale_number: saleNumber,
+      customer_id: customerId || null,
+      cashier_id: '1', 
+      subtotal,
+      discount_percentage: discountPercentage || 0,
+      discount_amount: discountAmount,
+      tax_amount: taxAmount,
+      total,
+      payment_method: payments.length === 1 ? payments[0].method : 'mixto',
+      payment_status: amountPaid >= total ? 'paid' : 'partial',
+      amount_paid: amountPaid,
+      change_amount: Math.max(0, amountPaid - total),
+      items_count: items.length,
+      status: 'completed',
+    }])
+    .select()
+    .single()
+
+  if (saleError) throw saleError
+
+  // 2. Crear los items de venta
+  const saleItems = items.map(item => ({
+    sale_id: saleData.id,
+    product_id: item.product.id,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    discount_percentage: item.discount_percentage,
+    discount_amount: item.discount_amount,
+    subtotal: item.subtotal,
+    total: item.total,
+  }))
+
+  const { error: itemsError } = await supabase
+    .from('sale_items')
+    .insert(saleItems)
+
+  if (itemsError) throw itemsError
+
+  // 3. Descontar stock de productos
+  for (const item of items) {
+    const newStock = item.product.stock_quantity - item.quantity;
+    await supabase
+      .from('products')
+      .update({ stock_quantity: newStock })
+      .eq('id', item.product.id)
   }
-  
-  mockSales.unshift(newSale)
-  return newSale
+
+  return {
+    ...saleData,
+    items: items.map(i => ({ ...i, sale_id: saleData.id })) as any
+  } as Sale
 }
 
 export async function cancelSale(id: string): Promise<Sale> {

@@ -34,8 +34,8 @@ interface ProductFormProps {
 }
 
 interface ProductFormValues {
-  sku: string
-  barcode: string
+  sku?: string
+  barcode?: string
   name: string
   description: string
   category_id: string
@@ -112,6 +112,11 @@ export function ProductForm({ product, onSuccess }: ProductFormProps) {
   const onSubmit = async (values: ProductFormValues) => {
     setIsSubmitting(true)
     try {
+      // Generar SKU automáticamente si está vacío
+      if (!values.sku) {
+        values.sku = `PROD-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+      }
+      
       if (product) {
         await updateMutation.mutateAsync(values)
       } else {
@@ -126,35 +131,6 @@ export function ProductForm({ product, onSuccess }: ProductFormProps) {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         {/* Basic Info */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            control={form.control}
-            name="sku"
-            rules={{ required: 'El SKU es requerido' }}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>SKU</FormLabel>
-                <FormControl>
-                  <Input placeholder="PRO-001" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="barcode"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Código de Barras</FormLabel>
-                <FormControl>
-                  <Input placeholder="7891234567890" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
 
         <FormField
           control={form.control}
